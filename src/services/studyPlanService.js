@@ -9,7 +9,14 @@ function getUserStudyPlanRef(userId) {
   return doc(db, 'users', userId, 'study', 'currentPlan')
 }
 
-function initializeProgressMap(plan) {
+function createTopicProgressKey(pathId, dayNumber, topicIndex) {
+  const pathPrefix = String(pathId ?? '').trim()
+  const baseKey = `d${dayNumber}-t${topicIndex + 1}`
+
+  return pathPrefix ? `${pathPrefix}-${baseKey}` : baseKey
+}
+
+function initializeProgressMap(plan, pathId = '') {
   const progressMap = {}
 
   plan.forEach((dayEntry, dayIndex) => {
@@ -17,7 +24,7 @@ function initializeProgressMap(plan) {
     const topics = Array.isArray(dayEntry.topics) ? dayEntry.topics : []
 
     topics.forEach((_, topicIndex) => {
-      const topicId = `d${dayNumber}-t${topicIndex + 1}`
+      const topicId = createTopicProgressKey(pathId, dayNumber, topicIndex)
       progressMap[topicId] = {
         status: 'Not Started',
         startedAt: null,
@@ -60,13 +67,15 @@ function normalizeLegacyPathData(data) {
     return []
   }
 
+  const legacyPathId = createPathId()
+
   return [
     {
-      id: createPathId(),
+      id: legacyPathId,
       goal: inferLegacyGoalFromPlan(legacyPlan),
       timeframe: legacyPlan.length,
       plan: legacyPlan,
-      progress: data?.progress ?? initializeProgressMap(legacyPlan),
+      progress: data?.progress ?? initializeProgressMap(legacyPlan, legacyPathId),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -78,8 +87,8 @@ export async function saveStudyPlan(userId, plan, options = {}) {
   const snapshot = await getDoc(userStudyPlanRef)
   const existingData = snapshot.exists() ? snapshot.data() : {}
   const existingPaths = normalizeLegacyPathData(existingData)
-  const initialProgress = initializeProgressMap(plan)
   const pathId = createPathId()
+  const initialProgress = initializeProgressMap(plan, pathId)
   const nowIso = new Date().toISOString()
   const nextPath = {
     id: pathId,
@@ -95,9 +104,13 @@ export async function saveStudyPlan(userId, plan, options = {}) {
   // Save initialized progress to localStorage as backup
   if (typeof window !== 'undefined') {
     try {
+      const storedValue = window.localStorage.getItem(`study-companion-progress-${userId}`)
+      const existingStoredProgress = storedValue ? JSON.parse(storedValue) : {}
+
       window.localStorage.setItem(
         `study-companion-progress-${userId}`,
         JSON.stringify({
+          ...existingStoredProgress,
           ...(existingData?.progress ?? {}),
           ...initialProgress,
         }),
@@ -111,8 +124,8 @@ export async function saveStudyPlan(userId, plan, options = {}) {
     userStudyPlanRef,
     {
       paths: updatedPaths,
-      plan: plan,
-      progress: initialProgress,
+      plan: nextPath.plan,
+      progress: nextPath.progress,
       activePathId: pathId,
       updatedAt: serverTimestamp(),
     },
@@ -176,7 +189,9 @@ export async function updateProgress(userId, progress, pathId = null) {
       : path,
   )
 
-  const activePath = updatedPaths.find((path) => path.id === targetPathId) ?? updatedPaths[updatedPaths.length - 1]
+  const activePath =
+    updatedPaths.find((path) => path.id === targetPathId) ??
+    updatedPaths[updatedPaths.length - 1]
 
   await setDoc(
     userStudyPlanRef,

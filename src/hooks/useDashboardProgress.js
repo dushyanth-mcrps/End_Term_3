@@ -191,7 +191,10 @@ function normalizeSinglePath(pathData = {}, fallbackIndex = 0, storedRevisionMap
         typeof topicEntry === 'object' && topicEntry !== null
           ? topicEntry.status
           : undefined
-      const normalizedProgressEntry = normalizeProgressEntry(mergedProgress[topicId])
+      const legacyTopicId = `d${dayNumber}-t${topicIndex + 1}`
+      const normalizedProgressEntry = normalizeProgressEntry(
+        mergedProgress[topicId] ?? mergedProgress[legacyTopicId],
+      )
       const status = normalizedProgressEntry.status ?? statusFromPlan ?? DEFAULT_STATUS
       const lastStudiedAt =
         storedRevisionMap[topicId] ??

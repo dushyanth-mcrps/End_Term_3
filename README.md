@@ -10,7 +10,7 @@ Students often struggle with three things:
 2. tracking progress consistently,
 3. revising topics at the right time.
 
-This project solves that by combining AI planning, progress tracking, secure user data, and revision support in one workflow.
+This project solves that by combining AI planning, progress tracking, secure user data, revision support, and resource management in one workflow.
 
 ## Features
 
@@ -28,7 +28,7 @@ This project solves that by combining AI planning, progress tracking, secure use
 
 3. Multi-Path Management
 - Supports multiple concurrent study paths for one user.
-- Delete an individual path.
+- Delete any path you no longer need.
 - Bulk delete fully completed paths.
 
 4. Smart Vault (CRUD)
@@ -182,25 +182,14 @@ The study document supports multiple paths:
 - `activePathId` : currently active path id
 - `plan` and `progress` : active path snapshot for backward compatibility
 
-## Demo Flow (3 to 5 Minutes)
+## AI Resource Links
 
-1. Sign up or log in.
-2. Generate two different study paths from Home.
-3. Open Dashboard and update topic status.
-4. Show analytics and revision reminders.
-5. Show Manage Study Paths (delete one path / delete completed paths).
-6. Use Smart Vault CRUD.
-7. Trigger AI resource suggestions.
-8. Open lazy-loaded AI Summarizer.
-9. Switch user account to demonstrate user-specific data.
+AI-suggested resource links are normalized so they remain usable:
 
-## Viva Readiness Pointers
+- YouTube suggestions open search results instead of fragile single video IDs.
+- Docs suggestions fall back to documentation search results when needed.
 
-Be ready to explain:
+## Demo Video
 
-1. Auth flow and protected routing.
-2. Firestore schema and security rules.
-3. Multi-path study storage and path-scoped progress updates.
-4. Hook design for progress, analytics, reminders, and path deletion.
-5. AI prompt/response normalization with Groq.
-6. Why lazy loading and useMemo are used.
+- [Watch the demo video](https://drive.google.com/file/d/1SBSmBDV4nguuyQAxxSHyfw1NEkfZcM0W/view?usp=drive_link)
+
