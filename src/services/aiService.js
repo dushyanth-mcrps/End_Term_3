@@ -56,6 +56,17 @@ Rules:
 - Keep titles concise.`
 }
 
+function buildSummaryPrompt(text) {
+  return `Summarize the following text into exactly 3 bullet points.
+Return only valid JSON in this exact format:
+{
+  "summary": ["Bullet 1", "Bullet 2", "Bullet 3"]
+}
+
+Text:
+${text}`
+}
+
 function normalizeResourceItems(items) {
   if (!Array.isArray(items)) {
     return []
@@ -78,6 +89,22 @@ function normalizeSuggestions(rawSuggestions) {
     youtube: normalizeResourceItems(rawSuggestions.youtube),
     docs: normalizeResourceItems(rawSuggestions.docs),
   }
+}
+
+function normalizeSummary(rawSummary) {
+  const summary = rawSummary?.summary
+
+  if (!Array.isArray(summary)) {
+    throw new Error('Invalid summary format received from AI.')
+  }
+
+  const bullets = summary.map((item) => String(item ?? '').trim()).filter(Boolean)
+
+  if (bullets.length !== 3) {
+    throw new Error('AI summary must contain exactly 3 bullet points.');
+  }
+
+  return bullets
 }
 
 async function requestGemini(textPrompt) {
@@ -156,4 +183,17 @@ export async function suggestResources(topic) {
   const parsedSuggestions = extractJsonObject(textOutput)
 
   return normalizeSuggestions(parsedSuggestions)
+}
+
+export async function summarizeText(inputText) {
+  const normalizedText = String(inputText ?? '').trim()
+
+  if (!normalizedText) {
+    throw new Error('Text is required to generate a summary.')
+  }
+
+  const textOutput = await requestGemini(buildSummaryPrompt(normalizedText))
+  const parsedSummary = extractJsonObject(textOutput)
+
+  return normalizeSummary(parsedSummary)
 }

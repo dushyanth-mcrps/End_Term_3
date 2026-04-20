@@ -1,12 +1,21 @@
 import ProgressSummary from '../components/dashboard/ProgressSummary'
+import StudyAnalytics from '../components/dashboard/StudyAnalytics'
+import SmartRevisionReminders from '../components/dashboard/SmartRevisionReminders'
 import StudyPlanList from '../components/dashboard/StudyPlanList'
 import ResourceVault from '../components/ResourceVault'
 import { useDashboardProgress } from '../hooks/useDashboardProgress'
 import { useResourceVault } from '../hooks/useResourceVault'
 
 function DashboardPage() {
-  const { studyPlan, isLoading, fetchError, syncError, isEmptyState, handleStatusChange } =
-    useDashboardProgress()
+  const {
+    studyPlan,
+    isLoading,
+    fetchError,
+    syncError,
+    isEmptyState,
+    handleStatusChange,
+    overdueTopics,
+  } = useDashboardProgress()
   const {
     resources,
     isLoading: isResourcesLoading,
@@ -50,6 +59,8 @@ function DashboardPage() {
       {studyPlan.length > 0 ? (
         <>
           <ProgressSummary studyPlan={studyPlan} />
+          <StudyAnalytics studyPlan={studyPlan} />
+          <SmartRevisionReminders overdueTopics={overdueTopics} />
           <StudyPlanList studyPlan={studyPlan} onStatusChange={handleStatusChange} />
         </>
       ) : null}

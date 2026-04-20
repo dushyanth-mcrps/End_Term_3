@@ -1,5 +1,19 @@
 const statusOptions = ['Not Started', 'In Progress', 'Completed']
 
+function isRevisionDue(lastStudiedAt) {
+  if (!lastStudiedAt) {
+    return true
+  }
+
+  const studiedDate = new Date(lastStudiedAt)
+  if (Number.isNaN(studiedDate.getTime())) {
+    return false
+  }
+
+  const hoursSinceStudy = (Date.now() - studiedDate.getTime()) / (60 * 60 * 1000)
+  return hoursSinceStudy >= 48
+}
+
 function StudyDayCard({ dayPlan, onStatusChange }) {
   return (
     <article className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -8,9 +22,28 @@ function StudyDayCard({ dayPlan, onStatusChange }) {
         {dayPlan.topics.map((topic) => (
           <li
             key={topic.id}
-            className="rounded-md border border-slate-200 bg-white p-3 sm:flex sm:items-center sm:justify-between"
+            className={`rounded-md border p-3 sm:flex sm:items-center sm:justify-between ${
+              isRevisionDue(topic.lastStudiedAt)
+                ? 'border-amber-300 bg-amber-50'
+                : 'border-slate-200 bg-white'
+            }`}
           >
-            <p className="text-sm font-medium text-slate-800">{topic.title}</p>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-slate-800">{topic.title}</p>
+                {isRevisionDue(topic.lastStudiedAt) ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900">
+                    Review
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Last studied:{' '}
+                {topic.lastStudiedAt
+                  ? new Date(topic.lastStudiedAt).toLocaleString()
+                  : 'Not studied yet'}
+              </p>
+            </div>
             <div className="mt-2 sm:mt-0">
               <label className="sr-only" htmlFor={topic.id}>
                 Update status for {topic.title}

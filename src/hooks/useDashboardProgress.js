@@ -3,8 +3,104 @@ import { useAuth } from '../context/AppContext'
 import { getStudyPlan, updateProgress } from '../services/studyPlanService'
 
 const DEFAULT_STATUS = 'Not Started'
+const MINUTES_PER_MILLISECOND = 1 / 60000
+const REVISION_THRESHOLD_HOURS = 48
 
-function normalizeStoredPlan(plan = [], progress = {}) {
+function getRevisionStorageKey(userId) {
+  return `study-companion-revisions-${userId}`
+}
+
+function readStoredRevisionMap(userId) {
+  if (typeof window === 'undefined' || !userId) {
+    return {}
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(getRevisionStorageKey(userId))
+    return storedValue ? JSON.parse(storedValue) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeStoredRevisionMap(userId, revisionMap) {
+  if (typeof window === 'undefined' || !userId) {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(
+      getRevisionStorageKey(userId),
+      JSON.stringify(revisionMap),
+    )
+  } catch {
+    // Ignore storage failures; the dashboard still works with in-memory state.
+  }
+}
+
+function parseDateValue(value) {
+  if (!value) {
+    return null
+  }
+
+  const parsedDate = new Date(value)
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+}
+
+function getMinutesBetween(startValue, endValue) {
+  const startDate = parseDateValue(startValue)
+  const endDate = parseDateValue(endValue) ?? new Date()
+
+  if (!startDate) {
+    return 0
+  }
+
+  const elapsedMilliseconds = Math.max(0, endDate.getTime() - startDate.getTime())
+  return Math.max(0, Math.round(elapsedMilliseconds * MINUTES_PER_MILLISECOND))
+}
+
+function normalizeProgressEntry(progressEntry) {
+  if (typeof progressEntry === 'string') {
+    return {
+      status: progressEntry,
+      startedAt: null,
+      completedAt: null,
+      timeSpentMinutes: 0,
+      lastUpdatedAt: null,
+      lastStudiedAt: null,
+    }
+  }
+
+  if (!progressEntry || typeof progressEntry !== 'object') {
+    return {
+      status: DEFAULT_STATUS,
+      startedAt: null,
+      completedAt: null,
+      timeSpentMinutes: 0,
+      lastUpdatedAt: null,
+      lastStudiedAt: null,
+    }
+  }
+
+  const status = progressEntry.status ?? DEFAULT_STATUS
+  const startedAt = progressEntry.startedAt ?? null
+  const completedAt = progressEntry.completedAt ?? null
+  const storedMinutes = Number(progressEntry.timeSpentMinutes ?? 0)
+
+  return {
+    status,
+    startedAt,
+    completedAt,
+    timeSpentMinutes:
+      storedMinutes > 0
+        ? storedMinutes
+        : getMinutesBetween(startedAt, completedAt || null),
+    lastUpdatedAt: progressEntry.lastUpdatedAt ?? null,
+    lastStudiedAt: progressEntry.lastStudiedAt ?? progressEntry.lastUpdatedAt ?? null,
+  }
+}
+
+function normalizeStoredPlan(plan = [], progress = {}, storedRevisionMap = {}) {
   return plan.map((dayEntry, dayIndex) => {
     const dayNumber = Number(dayEntry.day ?? dayIndex + 1)
     const rawTopics = Array.isArray(dayEntry.topics) ? dayEntry.topics : []
@@ -19,12 +115,23 @@ function normalizeStoredPlan(plan = [], progress = {}) {
         typeof topicEntry === 'object' && topicEntry !== null
           ? topicEntry.status
           : undefined
-      const status = progress[topicId] ?? statusFromPlan ?? DEFAULT_STATUS
+      const normalizedProgressEntry = normalizeProgressEntry(progress[topicId])
+      const status = normalizedProgressEntry.status ?? statusFromPlan ?? DEFAULT_STATUS
+      const lastStudiedAt =
+        storedRevisionMap[topicId] ??
+        normalizedProgressEntry.lastStudiedAt ??
+        normalizedProgressEntry.lastUpdatedAt ??
+        null
 
       return {
         id: topicId,
         title,
         status,
+        startedAt: normalizedProgressEntry.startedAt,
+        completedAt: normalizedProgressEntry.completedAt,
+        timeSpentMinutes: normalizedProgressEntry.timeSpentMinutes,
+        lastUpdatedAt: normalizedProgressEntry.lastUpdatedAt,
+        lastStudiedAt,
       }
     })
 
@@ -38,7 +145,14 @@ function normalizeStoredPlan(plan = [], progress = {}) {
 function buildProgressMap(studyPlan) {
   return studyPlan.reduce((accumulator, dayEntry) => {
     dayEntry.topics.forEach((topic) => {
-      accumulator[topic.id] = topic.status
+      accumulator[topic.id] = {
+        status: topic.status,
+        startedAt: topic.startedAt ?? null,
+        completedAt: topic.completedAt ?? null,
+        timeSpentMinutes: Number(topic.timeSpentMinutes ?? 0),
+        lastUpdatedAt: topic.lastUpdatedAt ?? null,
+        lastStudiedAt: topic.lastStudiedAt ?? null,
+      }
     })
 
     return accumulator
@@ -72,7 +186,12 @@ export function useDashboardProgress() {
 
       try {
         const data = await getStudyPlan(user.uid)
-        const normalizedPlan = normalizeStoredPlan(data?.plan ?? [], data?.progress ?? {})
+        const storedRevisionMap = readStoredRevisionMap(user.uid)
+        const normalizedPlan = normalizeStoredPlan(
+          data?.plan ?? [],
+          data?.progress ?? {},
+          storedRevisionMap,
+        )
 
         if (!isCancelled) {
           setStudyPlan(normalizedPlan)
@@ -99,19 +218,75 @@ export function useDashboardProgress() {
     }
   }, [user?.uid, isAuthLoading])
 
+  useEffect(() => {
+    if (!user?.uid || studyPlan.length === 0) {
+      return
+    }
+
+    const revisionMap = buildProgressMap(studyPlan)
+    const lastStudiedMap = Object.entries(revisionMap).reduce((accumulator, [topicId, topic]) => {
+      accumulator[topicId] = topic.lastStudiedAt ?? null
+      return accumulator
+    }, {})
+
+    writeStoredRevisionMap(user.uid, lastStudiedMap)
+  }, [studyPlan, user?.uid])
+
   const handleStatusChange = async (topicId, nextStatus) => {
     if (!user?.uid) {
       setSyncError('Please log in to update progress.')
       return
     }
 
+    const nowIsoString = new Date().toISOString()
     let updatedPlan = []
 
     setStudyPlan((previousPlan) => {
       updatedPlan = previousPlan.map((dayEntry) => ({
         ...dayEntry,
         topics: dayEntry.topics.map((topic) =>
-          topic.id === topicId ? { ...topic, status: nextStatus } : topic,
+          topic.id === topicId
+            ? {
+                ...topic,
+                ...(() => {
+                  const previousMinutes = Number(topic.timeSpentMinutes ?? 0)
+                  const previousStartedAt = topic.startedAt ?? null
+
+                  if (nextStatus === 'In Progress') {
+                    return {
+                      status: nextStatus,
+                      startedAt: previousStartedAt ?? nowIsoString,
+                      completedAt: null,
+                      timeSpentMinutes: previousMinutes,
+                      lastUpdatedAt: nowIsoString,
+                      lastStudiedAt: nowIsoString,
+                    }
+                  }
+
+                  if (nextStatus === 'Completed') {
+                    const startedAt = previousStartedAt ?? nowIsoString
+                    return {
+                      status: nextStatus,
+                      startedAt,
+                      completedAt: nowIsoString,
+                      timeSpentMinutes:
+                        previousMinutes + getMinutesBetween(startedAt, nowIsoString),
+                      lastUpdatedAt: nowIsoString,
+                      lastStudiedAt: nowIsoString,
+                    }
+                  }
+
+                  return {
+                    status: nextStatus,
+                    startedAt: previousStartedAt,
+                    completedAt: topic.completedAt ?? null,
+                    timeSpentMinutes: previousMinutes,
+                    lastUpdatedAt: nowIsoString,
+                    lastStudiedAt: topic.lastStudiedAt ?? null,
+                  }
+                })(),
+              }
+            : topic,
         ),
       }))
 
@@ -135,6 +310,51 @@ export function useDashboardProgress() {
     [isLoading, fetchError, studyPlan.length],
   )
 
+  const revisionDueCount = useMemo(() => {
+    const now = Date.now()
+    const thresholdMs = REVISION_THRESHOLD_HOURS * 60 * 60 * 1000
+
+    return studyPlan
+      .flatMap((dayEntry) => dayEntry.topics)
+      .filter((topic) => {
+        if (!topic.lastStudiedAt) {
+          return topic.status !== 'Completed'
+        }
+
+        const studiedTime = new Date(topic.lastStudiedAt).getTime()
+        if (Number.isNaN(studiedTime)) {
+          return false
+        }
+
+        return now - studiedTime >= thresholdMs
+      }).length
+  }, [studyPlan])
+
+  const overdueTopics = useMemo(() => {
+    const now = Date.now()
+    const thresholdMs = REVISION_THRESHOLD_HOURS * 60 * 60 * 1000
+
+    return studyPlan
+      .flatMap((dayEntry) =>
+        dayEntry.topics.map((topic) => ({
+          ...topic,
+          day: dayEntry.day,
+        })),
+      )
+      .filter((topic) => {
+        if (!topic.lastStudiedAt) {
+          return topic.status !== 'Completed'
+        }
+
+        const studiedTime = new Date(topic.lastStudiedAt).getTime()
+        if (Number.isNaN(studiedTime)) {
+          return false
+        }
+
+        return now - studiedTime >= thresholdMs
+      })
+  }, [studyPlan])
+
   return {
     studyPlan,
     isLoading,
@@ -142,5 +362,7 @@ export function useDashboardProgress() {
     syncError,
     isEmptyState,
     handleStatusChange,
+    revisionDueCount,
+    overdueTopics,
   }
 }
