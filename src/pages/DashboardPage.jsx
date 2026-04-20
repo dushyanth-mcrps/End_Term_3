@@ -1,10 +1,25 @@
 import ProgressSummary from '../components/dashboard/ProgressSummary'
 import StudyPlanList from '../components/dashboard/StudyPlanList'
+import ResourceVault from '../components/ResourceVault'
 import { useDashboardProgress } from '../hooks/useDashboardProgress'
+import { useResourceVault } from '../hooks/useResourceVault'
 
 function DashboardPage() {
   const { studyPlan, isLoading, fetchError, syncError, isEmptyState, handleStatusChange } =
     useDashboardProgress()
+  const {
+    resources,
+    isLoading: isResourcesLoading,
+    error: resourcesError,
+    aiSuggestions,
+    isSuggestionsLoading,
+    suggestionsError,
+    suggestionTopic,
+    createResource,
+    updateResource,
+    deleteResource,
+    requestSuggestions,
+  } = useResourceVault()
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -38,6 +53,19 @@ function DashboardPage() {
           <StudyPlanList studyPlan={studyPlan} onStatusChange={handleStatusChange} />
         </>
       ) : null}
+      <ResourceVault
+        resources={resources}
+        isLoading={isResourcesLoading}
+        error={resourcesError}
+        aiSuggestions={aiSuggestions}
+        isSuggestionsLoading={isSuggestionsLoading}
+        suggestionsError={suggestionsError}
+        suggestionTopic={suggestionTopic}
+        onAddResource={createResource}
+        onEditResource={updateResource}
+        onDeleteResource={deleteResource}
+        onRequestSuggestions={requestSuggestions}
+      />
     </section>
   )
 }
