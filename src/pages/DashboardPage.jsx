@@ -1,44 +1,10 @@
-import { useState } from 'react'
 import ProgressSummary from '../components/dashboard/ProgressSummary'
 import StudyPlanList from '../components/dashboard/StudyPlanList'
-
-const initialStudyPlan = [
-  {
-    day: 1,
-    topics: [
-      { id: 'd1-t1', title: 'Intro to React Hooks', status: 'Completed' },
-      { id: 'd1-t2', title: 'useState Fundamentals', status: 'In Progress' },
-    ],
-  },
-  {
-    day: 2,
-    topics: [
-      { id: 'd2-t1', title: 'useEffect and Side Effects', status: 'Not Started' },
-      { id: 'd2-t2', title: 'Rules of Hooks', status: 'Not Started' },
-    ],
-  },
-  {
-    day: 3,
-    topics: [
-      { id: 'd3-t1', title: 'Custom Hooks Basics', status: 'Not Started' },
-      { id: 'd3-t2', title: 'Practice Exercise', status: 'Not Started' },
-    ],
-  },
-]
+import { useDashboardProgress } from '../hooks/useDashboardProgress'
 
 function DashboardPage() {
-  const [studyPlan, setStudyPlan] = useState(initialStudyPlan)
-
-  const handleStatusChange = (topicId, nextStatus) => {
-    setStudyPlan((previousPlan) =>
-      previousPlan.map((day) => ({
-        ...day,
-        topics: day.topics.map((topic) =>
-          topic.id === topicId ? { ...topic, status: nextStatus } : topic,
-        ),
-      })),
-    )
-  }
+  const { studyPlan, isLoading, fetchError, syncError, isEmptyState, handleStatusChange } =
+    useDashboardProgress()
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -46,8 +12,32 @@ function DashboardPage() {
       <p className="mt-2 text-slate-600">
         Track your current study plan and update each topic as you progress.
       </p>
-      <ProgressSummary studyPlan={studyPlan} />
-      <StudyPlanList studyPlan={studyPlan} onStatusChange={handleStatusChange} />
+      {isLoading ? (
+        <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          Loading your study progress...
+        </p>
+      ) : null}
+      {fetchError ? (
+        <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {fetchError}
+        </p>
+      ) : null}
+      {isEmptyState ? (
+        <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          No study plan found. Generate one from the Home page first.
+        </p>
+      ) : null}
+      {syncError ? (
+        <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          {syncError}
+        </p>
+      ) : null}
+      {studyPlan.length > 0 ? (
+        <>
+          <ProgressSummary studyPlan={studyPlan} />
+          <StudyPlanList studyPlan={studyPlan} onStatusChange={handleStatusChange} />
+        </>
+      ) : null}
     </section>
   )
 }

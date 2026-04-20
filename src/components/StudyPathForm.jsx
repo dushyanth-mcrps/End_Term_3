@@ -1,17 +1,17 @@
 import { useState } from 'react'
-import { generateStudyPlan } from '../services/aiService'
-
 const initialFormValues = {
   goal: '',
   timeframe: '',
 }
 
-function StudyPathForm() {
+function StudyPathForm({
+  studyPlan,
+  isLoading,
+  errorMessage,
+  onGenerateStudyPlan,
+}) {
   const [formValues, setFormValues] = useState(initialFormValues)
   const [errors, setErrors] = useState({})
-  const [studyPlan, setStudyPlan] = useState([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [apiError, setApiError] = useState('')
 
   const handleInputChange = (event) => {
     const { name, value } = event.target
@@ -20,7 +20,6 @@ function StudyPathForm() {
       ...previousValues,
       [name]: value,
     }))
-    setApiError('')
   }
 
   const validateForm = () => {
@@ -53,20 +52,10 @@ function StudyPathForm() {
       timeframe: Number(formValues.timeframe),
     }
 
-    console.log('StudyPathForm submit:', payload)
-    setIsLoading(true)
-    setApiError('')
-
     try {
-      const generatedPlan = await generateStudyPlan(payload.goal, payload.timeframe)
-      setStudyPlan(generatedPlan)
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to generate study plan.'
-      setStudyPlan([])
-      setApiError(message)
-    } finally {
-      setIsLoading(false)
+      await onGenerateStudyPlan(payload)
+    } catch {
+      // Error display is controlled by parent state.
     }
   }
 
@@ -77,9 +66,9 @@ function StudyPathForm() {
         <p className="mt-1 text-sm text-slate-600">
           Enter your learning goal and timeframe to generate a personalized plan.
         </p>
-        {apiError ? (
+        {errorMessage ? (
           <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {apiError}
+            {errorMessage}
           </p>
         ) : null}
 
