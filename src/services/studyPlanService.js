@@ -9,13 +9,50 @@ function getUserStudyPlanRef(userId) {
   return doc(db, 'users', userId, 'study', 'currentPlan')
 }
 
+function initializeProgressMap(plan) {
+  const progressMap = {}
+
+  plan.forEach((dayEntry, dayIndex) => {
+    const dayNumber = Number(dayEntry.day ?? dayIndex + 1)
+    const topics = Array.isArray(dayEntry.topics) ? dayEntry.topics : []
+
+    topics.forEach((_, topicIndex) => {
+      const topicId = `d${dayNumber}-t${topicIndex + 1}`
+      progressMap[topicId] = {
+        status: 'Not Started',
+        startedAt: null,
+        completedAt: null,
+        timeSpentMinutes: 0,
+        lastUpdatedAt: null,
+        lastStudiedAt: null,
+      }
+    })
+  })
+
+  return progressMap
+}
+
 export async function saveStudyPlan(userId, plan) {
   const userStudyPlanRef = getUserStudyPlanRef(userId)
+  const initialProgress = initializeProgressMap(plan)
+
+  // Save initialized progress to localStorage as backup
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(
+        `study-companion-progress-${userId}`,
+        JSON.stringify(initialProgress),
+      )
+    } catch {
+      // Ignore storage failures
+    }
+  }
 
   await setDoc(
     userStudyPlanRef,
     {
       plan,
+      progress: initialProgress,
       updatedAt: serverTimestamp(),
     },
     { merge: true },

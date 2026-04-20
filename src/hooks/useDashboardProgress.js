@@ -6,8 +6,40 @@ const DEFAULT_STATUS = 'Not Started'
 const MINUTES_PER_MILLISECOND = 1 / 60000
 const REVISION_THRESHOLD_HOURS = 48
 
+function getProgressStorageKey(userId) {
+  return `study-companion-progress-${userId}`
+}
+
 function getRevisionStorageKey(userId) {
   return `study-companion-revisions-${userId}`
+}
+
+function readStoredProgressMap(userId) {
+  if (typeof window === 'undefined' || !userId) {
+    return {}
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(getProgressStorageKey(userId))
+    return storedValue ? JSON.parse(storedValue) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeStoredProgressMap(userId, progressMap) {
+  if (typeof window === 'undefined' || !userId) {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(
+      getProgressStorageKey(userId),
+      JSON.stringify(progressMap),
+    )
+  } catch {
+    // Ignore storage failures
+  }
 }
 
 function readStoredRevisionMap(userId) {
@@ -100,7 +132,10 @@ function normalizeProgressEntry(progressEntry) {
   }
 }
 
-function normalizeStoredPlan(plan = [], progress = {}, storedRevisionMap = {}) {
+function normalizeStoredPlan(plan = [], progress = {}, storedRevisionMap = {}, storedProgressMap = {}) {
+  // Merge Firestore progress with localStorage progress (localStorage is backup/fallback)
+  const mergedProgress = { ...progress, ...storedProgressMap }
+
   return plan.map((dayEntry, dayIndex) => {
     const dayNumber = Number(dayEntry.day ?? dayIndex + 1)
     const rawTopics = Array.isArray(dayEntry.topics) ? dayEntry.topics : []
@@ -115,7 +150,7 @@ function normalizeStoredPlan(plan = [], progress = {}, storedRevisionMap = {}) {
         typeof topicEntry === 'object' && topicEntry !== null
           ? topicEntry.status
           : undefined
-      const normalizedProgressEntry = normalizeProgressEntry(progress[topicId])
+      const normalizedProgressEntry = normalizeProgressEntry(mergedProgress[topicId])
       const status = normalizedProgressEntry.status ?? statusFromPlan ?? DEFAULT_STATUS
       const lastStudiedAt =
         storedRevisionMap[topicId] ??
@@ -201,10 +236,12 @@ export function useDashboardProgress() {
       try {
         const data = await getStudyPlan(user.uid)
         const storedRevisionMap = readStoredRevisionMap(user.uid)
+        const storedProgressMap = readStoredProgressMap(user.uid)
         const normalizedPlan = normalizeStoredPlan(
           data?.plan ?? [],
           data?.progress ?? {},
           storedRevisionMap,
+          storedProgressMap,
         )
 
         if (!isCancelled) {
@@ -244,6 +281,15 @@ export function useDashboardProgress() {
     }, {})
 
     writeStoredRevisionMap(user.uid, lastStudiedMap)
+  }, [studyPlan, user?.uid])
+
+  useEffect(() => {
+    if (!user?.uid || studyPlan.length === 0) {
+      return
+    }
+
+    const progressMap = buildProgressMap(studyPlan)
+    writeStoredProgressMap(user.uid, progressMap)
   }, [studyPlan, user?.uid])
 
   const handleStatusChange = async (topicId, nextStatus) => {
@@ -311,6 +357,8 @@ export function useDashboardProgress() {
 
     try {
       const progressMap = buildProgressMap(updatedPlan)
+      // Save to both Firestore and localStorage immediately
+      writeStoredProgressMap(user.uid, progressMap)
       await updateProgress(user.uid, progressMap)
     } catch (error) {
       const message =
