@@ -3,7 +3,7 @@ import { Outlet } from 'react-router-dom'
 import Navbar from './Navbar'
 import { useNavigationLinks } from '../hooks/useNavigationLinks'
 import { APP_NAME } from '../utils/constants'
-import { useAuth } from '../context/AppContext'
+import { useAuth } from '../context/useAuth'
 
 function AppLayout() {
   const links = useNavigationLinks()

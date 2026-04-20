@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '../services/firebase'
 import { loginUser, logoutUser, signupUser } from '../services/authService'
@@ -70,14 +70,4 @@ export function AppProvider({ children }) {
   )
 
   return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>
-}
-
-export function useAuth() {
-  const context = useContext(AppContext)
-
-  if (!context) {
-    throw new Error('useAuth must be used within an AppProvider.')
-  }
-
-  return context
 }

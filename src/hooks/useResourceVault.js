@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useAuth } from '../context/AppContext'
+import { useAuth } from '../context/useAuth'
 import { suggestResources } from '../services/aiService'
 import {
   addResource,

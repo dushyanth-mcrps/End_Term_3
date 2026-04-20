@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useAuth } from '../context/AppContext'
+import { useAuth } from '../context/useAuth'
 import { getNavigationLinks } from '../services/navigationService'
 
 export function useNavigationLinks() {

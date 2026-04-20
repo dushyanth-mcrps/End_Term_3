@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '../context/AppContext'
+import { useAuth } from '../context/useAuth'
 import { getStudyPlan, updateProgress } from '../services/studyPlanService'
 
 const DEFAULT_STATUS = 'Not Started'
@@ -165,6 +165,20 @@ export function useDashboardProgress() {
   const [isLoading, setIsLoading] = useState(true)
   const [fetchError, setFetchError] = useState('')
   const [syncError, setSyncError] = useState('')
+  const [currentTimeMs, setCurrentTimeMs] = useState(0)
+
+  useEffect(() => {
+    const updateCurrentTime = () => {
+      setCurrentTimeMs(Date.now())
+    }
+
+    updateCurrentTime()
+    const intervalId = window.setInterval(updateCurrentTime, 60 * 1000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [])
 
   useEffect(() => {
     let isCancelled = false
@@ -311,7 +325,6 @@ export function useDashboardProgress() {
   )
 
   const revisionDueCount = useMemo(() => {
-    const now = Date.now()
     const thresholdMs = REVISION_THRESHOLD_HOURS * 60 * 60 * 1000
 
     return studyPlan
@@ -326,12 +339,11 @@ export function useDashboardProgress() {
           return false
         }
 
-        return now - studiedTime >= thresholdMs
+        return currentTimeMs - studiedTime >= thresholdMs
       }).length
-  }, [studyPlan])
+  }, [studyPlan, currentTimeMs])
 
   const overdueTopics = useMemo(() => {
-    const now = Date.now()
     const thresholdMs = REVISION_THRESHOLD_HOURS * 60 * 60 * 1000
 
     return studyPlan
@@ -351,9 +363,9 @@ export function useDashboardProgress() {
           return false
         }
 
-        return now - studiedTime >= thresholdMs
+        return currentTimeMs - studiedTime >= thresholdMs
       })
-  }, [studyPlan])
+  }, [studyPlan, currentTimeMs])
 
   return {
     studyPlan,

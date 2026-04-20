@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AppContext'
+import { useAuth } from '../context/useAuth'
 
 const initialFormState = {
   email: '',

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '../context/AppContext'
+import { useAuth } from '../context/useAuth'
 import { generateStudyPlan } from '../services/aiService'
 import { getStudyPlan, saveStudyPlan } from '../services/studyPlanService'
 
