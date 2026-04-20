@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { auth } from '../services/firebase'
+import { useAuth } from '../context/AppContext'
 import { suggestResources } from '../services/aiService'
 import {
   addResource,
@@ -8,13 +8,8 @@ import {
   removeResource,
 } from '../services/resourceService'
 
-const FALLBACK_USER_ID = 'demo-user'
-
-function resolveUserId() {
-  return auth.currentUser?.uid ?? FALLBACK_USER_ID
-}
-
 export function useResourceVault() {
+  const { user, isAuthLoading } = useAuth()
   const [resources, setResources] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -27,12 +22,22 @@ export function useResourceVault() {
     let isCancelled = false
 
     const fetchResources = async () => {
+      if (isAuthLoading) {
+        return
+      }
+
+      if (!user?.uid) {
+        setResources([])
+        setError('')
+        setIsLoading(false)
+        return
+      }
+
       setIsLoading(true)
       setError('')
 
       try {
-        const userId = resolveUserId()
-        const fetchedResources = await getResources(userId)
+        const fetchedResources = await getResources(user.uid)
 
         if (!isCancelled) {
           setResources(fetchedResources)
@@ -57,7 +62,7 @@ export function useResourceVault() {
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [user?.uid, isAuthLoading])
 
   const requestSuggestions = async (topic) => {
     const normalizedTopic = String(topic ?? '').trim()
@@ -92,8 +97,12 @@ export function useResourceVault() {
   const createResource = async (resource) => {
     try {
       setError('')
-      const userId = resolveUserId()
-      const resourceId = await addResource(userId, resource)
+
+      if (!user?.uid) {
+        throw new Error('Please log in to add resources.')
+      }
+
+      const resourceId = await addResource(user.uid, resource)
 
       const optimisticResource = {
         id: resourceId,
@@ -113,9 +122,12 @@ export function useResourceVault() {
   const updateResource = async (resourceId, updates) => {
     try {
       setError('')
-      const userId = resolveUserId()
 
-      await editResource(userId, resourceId, updates)
+      if (!user?.uid) {
+        throw new Error('Please log in to update resources.')
+      }
+
+      await editResource(user.uid, resourceId, updates)
 
       setResources((prevResources) =>
         prevResources.map((resource) =>
@@ -136,9 +148,12 @@ export function useResourceVault() {
   const deleteResource = async (resourceId) => {
     try {
       setError('')
-      const userId = resolveUserId()
 
-      await removeResource(userId, resourceId)
+      if (!user?.uid) {
+        throw new Error('Please log in to delete resources.')
+      }
+
+      await removeResource(user.uid, resourceId)
       setResources((prevResources) =>
         prevResources.filter((resource) => resource.id !== resourceId),
       )

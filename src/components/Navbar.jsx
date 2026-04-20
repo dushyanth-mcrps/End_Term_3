@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 
-function Navbar({ links, brandName }) {
+function Navbar({ links, brandName, userEmail, onLogout, isLoggingOut }) {
   const getNavLinkClass = ({ isActive }) =>
     `rounded-md px-3 py-2 text-sm font-medium transition-colors ${
       isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'
@@ -16,6 +16,20 @@ function Navbar({ links, brandName }) {
               {link.label}
             </NavLink>
           ))}
+
+          {userEmail ? (
+            <>
+              <span className="hidden text-xs text-slate-500 sm:inline">{userEmail}</span>
+              <button
+                type="button"
+                onClick={onLogout}
+                disabled={isLoggingOut}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isLoggingOut ? 'Logging out...' : 'Logout'}
+              </button>
+            </>
+          ) : null}
         </div>
       </nav>
     </header>

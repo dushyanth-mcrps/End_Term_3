@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { auth } from '../services/firebase'
+import { useAuth } from '../context/AppContext'
 import { generateStudyPlan } from '../services/aiService'
 import { getStudyPlan, saveStudyPlan } from '../services/studyPlanService'
 
-const FALLBACK_USER_ID = 'demo-user'
-
-function resolveUserId() {
-  return auth.currentUser?.uid ?? FALLBACK_USER_ID
-}
-
 export function useStudyPlan() {
+  const { user, isAuthLoading } = useAuth()
   const [studyPlan, setStudyPlan] = useState([])
   const [isFetchingPlan, setIsFetchingPlan] = useState(true)
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false)
@@ -21,12 +16,23 @@ export function useStudyPlan() {
     let isCancelled = false
 
     const loadStudyPlan = async () => {
+      if (isAuthLoading) {
+        return
+      }
+
+      if (!user?.uid) {
+        setStudyPlan([])
+        setFetchError('')
+        setHasLoadedPlan(true)
+        setIsFetchingPlan(false)
+        return
+      }
+
       setIsFetchingPlan(true)
       setFetchError('')
 
       try {
-        const userId = resolveUserId()
-        const studyPlanData = await getStudyPlan(userId)
+        const studyPlanData = await getStudyPlan(user.uid)
 
         if (!isCancelled) {
           setStudyPlan(studyPlanData?.plan ?? [])
@@ -50,17 +56,20 @@ export function useStudyPlan() {
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [user?.uid, isAuthLoading])
 
   const generateAndSavePlan = async ({ goal, timeframe }) => {
     setIsGeneratingPlan(true)
     setSaveError('')
 
     try {
-      const generatedPlan = await generateStudyPlan(goal, timeframe)
-      const userId = resolveUserId()
+      if (!user?.uid) {
+        throw new Error('Please log in to generate and save a study plan.')
+      }
 
-      await saveStudyPlan(userId, generatedPlan)
+      const generatedPlan = await generateStudyPlan(goal, timeframe)
+
+      await saveStudyPlan(user.uid, generatedPlan)
       setStudyPlan(generatedPlan)
 
       return generatedPlan

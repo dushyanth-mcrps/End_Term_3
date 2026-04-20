@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { auth } from '../services/firebase'
+import { useAuth } from '../context/AppContext'
 import { getStudyPlan, updateProgress } from '../services/studyPlanService'
 
-const FALLBACK_USER_ID = 'demo-user'
 const DEFAULT_STATUS = 'Not Started'
-
-function resolveUserId() {
-  return auth.currentUser?.uid ?? FALLBACK_USER_ID
-}
 
 function normalizeStoredPlan(plan = [], progress = {}) {
   return plan.map((dayEntry, dayIndex) => {
@@ -51,6 +46,7 @@ function buildProgressMap(studyPlan) {
 }
 
 export function useDashboardProgress() {
+  const { user, isAuthLoading } = useAuth()
   const [studyPlan, setStudyPlan] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [fetchError, setFetchError] = useState('')
@@ -60,12 +56,22 @@ export function useDashboardProgress() {
     let isCancelled = false
 
     const fetchPlan = async () => {
+      if (isAuthLoading) {
+        return
+      }
+
+      if (!user?.uid) {
+        setStudyPlan([])
+        setFetchError('')
+        setIsLoading(false)
+        return
+      }
+
       setIsLoading(true)
       setFetchError('')
 
       try {
-        const userId = resolveUserId()
-        const data = await getStudyPlan(userId)
+        const data = await getStudyPlan(user.uid)
         const normalizedPlan = normalizeStoredPlan(data?.plan ?? [], data?.progress ?? {})
 
         if (!isCancelled) {
@@ -91,10 +97,14 @@ export function useDashboardProgress() {
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [user?.uid, isAuthLoading])
 
   const handleStatusChange = async (topicId, nextStatus) => {
-    const userId = resolveUserId()
+    if (!user?.uid) {
+      setSyncError('Please log in to update progress.')
+      return
+    }
+
     let updatedPlan = []
 
     setStudyPlan((previousPlan) => {
@@ -112,7 +122,7 @@ export function useDashboardProgress() {
 
     try {
       const progressMap = buildProgressMap(updatedPlan)
-      await updateProgress(userId, progressMap)
+      await updateProgress(user.uid, progressMap)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to sync topic progress.'
