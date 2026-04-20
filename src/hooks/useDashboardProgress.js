@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/useAuth'
-import { getStudyPlan, updateProgress } from '../services/studyPlanService'
+import { getStudyPlan, removeStudyPaths, updateProgress } from '../services/studyPlanService'
 
 const DEFAULT_STATUS = 'Not Started'
 const MINUTES_PER_MILLISECOND = 1 / 60000
@@ -70,6 +70,17 @@ function writeStoredRevisionMap(userId, revisionMap) {
   }
 }
 
+function removePathKeysFromMap(mapObject, pathIds) {
+  const idsToRemove = new Set(pathIds)
+
+  return Object.fromEntries(
+    Object.entries(mapObject).filter(([key]) => {
+      const pathPrefix = key.split('-d')[0]
+      return !idsToRemove.has(pathPrefix)
+    }),
+  )
+}
+
 function parseDateValue(value) {
   if (!value) {
     return null
@@ -88,7 +99,11 @@ function getMinutesBetween(startValue, endValue) {
   }
 
   const elapsedMilliseconds = Math.max(0, endDate.getTime() - startDate.getTime())
-  return Math.max(0, Math.round(elapsedMilliseconds * MINUTES_PER_MILLISECOND))
+  if (elapsedMilliseconds === 0) {
+    return 0
+  }
+
+  return Math.max(1, Math.ceil(elapsedMilliseconds * MINUTES_PER_MILLISECOND))
 }
 
 function normalizeProgressEntry(progressEntry) {
@@ -132,7 +147,33 @@ function normalizeProgressEntry(progressEntry) {
   }
 }
 
-function normalizeStoredPlan(plan = [], progress = {}, storedRevisionMap = {}, storedProgressMap = {}) {
+function inferPathGoal(pathData, fallbackIndex) {
+  const goal = String(pathData.goal ?? '').trim()
+  if (goal && goal !== 'Existing Study Path') {
+    return goal
+  }
+
+  const firstDay = Array.isArray(pathData.plan) ? pathData.plan[0] : null
+  const firstTopic = Array.isArray(firstDay?.topics) ? firstDay.topics[0] : ''
+  const topicText =
+    typeof firstTopic === 'string'
+      ? firstTopic
+      : String(firstTopic?.title ?? '')
+
+  const introMatch = topicText.match(/introduction to\s+(.+?)(?:\s*-\s*day\s*\d+)?$/i)
+  if (introMatch?.[1]) {
+    return introMatch[1].trim()
+  }
+
+  return `Study Path ${fallbackIndex + 1}`
+}
+
+function normalizeSinglePath(pathData = {}, fallbackIndex = 0, storedRevisionMap = {}, storedProgressMap = {}) {
+  const pathId = String(pathData.id ?? `legacy-path-${fallbackIndex + 1}`)
+  const pathGoal = inferPathGoal(pathData, fallbackIndex)
+  const plan = Array.isArray(pathData.plan) ? pathData.plan : []
+  const progress = pathData.progress ?? {}
+
   // Merge Firestore progress with localStorage progress (localStorage is backup/fallback)
   const mergedProgress = { ...progress, ...storedProgressMap }
 
@@ -141,7 +182,7 @@ function normalizeStoredPlan(plan = [], progress = {}, storedRevisionMap = {}, s
     const rawTopics = Array.isArray(dayEntry.topics) ? dayEntry.topics : []
 
     const topics = rawTopics.map((topicEntry, topicIndex) => {
-      const topicId = `d${dayNumber}-t${topicIndex + 1}`
+      const topicId = `${pathId}-d${dayNumber}-t${topicIndex + 1}`
       const title =
         typeof topicEntry === 'string'
           ? topicEntry
@@ -160,6 +201,8 @@ function normalizeStoredPlan(plan = [], progress = {}, storedRevisionMap = {}, s
 
       return {
         id: topicId,
+        pathId,
+        pathGoal,
         title,
         status,
         startedAt: normalizedProgressEntry.startedAt,
@@ -171,10 +214,37 @@ function normalizeStoredPlan(plan = [], progress = {}, storedRevisionMap = {}, s
     })
 
     return {
+      id: `${pathId}-day-${dayNumber}`,
+      pathId,
+      pathGoal,
       day: dayNumber,
       topics,
     }
   })
+}
+
+function normalizeStoredPlan(data = {}, storedRevisionMap = {}, storedProgressMap = {}) {
+  const paths = Array.isArray(data?.paths) ? data.paths : []
+
+  if (paths.length > 0) {
+    return paths.flatMap((pathData, pathIndex) =>
+      normalizeSinglePath(pathData, pathIndex, storedRevisionMap, storedProgressMap),
+    )
+  }
+
+  const legacyPlan = Array.isArray(data?.plan) ? data.plan : []
+  const legacyProgress = data?.progress ?? {}
+
+  return normalizeSinglePath(
+    {
+      id: 'legacy-path-1',
+      plan: legacyPlan,
+      progress: legacyProgress,
+    },
+    0,
+    storedRevisionMap,
+    storedProgressMap,
+  )
 }
 
 function buildProgressMap(studyPlan) {
@@ -201,6 +271,7 @@ export function useDashboardProgress() {
   const [fetchError, setFetchError] = useState('')
   const [syncError, setSyncError] = useState('')
   const [currentTimeMs, setCurrentTimeMs] = useState(0)
+  const [isDeletingPath, setIsDeletingPath] = useState(false)
 
   useEffect(() => {
     const updateCurrentTime = () => {
@@ -237,12 +308,7 @@ export function useDashboardProgress() {
         const data = await getStudyPlan(user.uid)
         const storedRevisionMap = readStoredRevisionMap(user.uid)
         const storedProgressMap = readStoredProgressMap(user.uid)
-        const normalizedPlan = normalizeStoredPlan(
-          data?.plan ?? [],
-          data?.progress ?? {},
-          storedRevisionMap,
-          storedProgressMap,
-        )
+        const normalizedPlan = normalizeStoredPlan(data ?? {}, storedRevisionMap, storedProgressMap)
 
         if (!isCancelled) {
           setStudyPlan(normalizedPlan)
@@ -300,6 +366,7 @@ export function useDashboardProgress() {
 
     const nowIsoString = new Date().toISOString()
     let updatedPlan = []
+    let selectedPathId = null
 
     setStudyPlan((previousPlan) => {
       updatedPlan = previousPlan.map((dayEntry) => ({
@@ -309,6 +376,7 @@ export function useDashboardProgress() {
             ? {
                 ...topic,
                 ...(() => {
+                  selectedPathId = topic.pathId
                   const previousMinutes = Number(topic.timeSpentMinutes ?? 0)
                   const previousStartedAt = topic.startedAt ?? null
 
@@ -325,12 +393,15 @@ export function useDashboardProgress() {
 
                   if (nextStatus === 'Completed') {
                     const startedAt = previousStartedAt ?? nowIsoString
+                    const gainedMinutes = getMinutesBetween(startedAt, nowIsoString)
+                    const minimumCompletionMinutes = previousMinutes === 0 ? 1 : 0
+
                     return {
                       status: nextStatus,
                       startedAt,
                       completedAt: nowIsoString,
                       timeSpentMinutes:
-                        previousMinutes + getMinutesBetween(startedAt, nowIsoString),
+                        previousMinutes + Math.max(gainedMinutes, minimumCompletionMinutes),
                       lastUpdatedAt: nowIsoString,
                       lastStudiedAt: nowIsoString,
                     }
@@ -356,10 +427,12 @@ export function useDashboardProgress() {
     setSyncError('')
 
     try {
-      const progressMap = buildProgressMap(updatedPlan)
+      const selectedPathPlan = updatedPlan.filter((dayEntry) => dayEntry.pathId === selectedPathId)
+      const progressMap = buildProgressMap(selectedPathPlan)
       // Save to both Firestore and localStorage immediately
-      writeStoredProgressMap(user.uid, progressMap)
-      await updateProgress(user.uid, progressMap)
+      const storedProgressMap = readStoredProgressMap(user.uid)
+      writeStoredProgressMap(user.uid, { ...storedProgressMap, ...progressMap })
+      await updateProgress(user.uid, progressMap, selectedPathId)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to sync topic progress.'
@@ -382,12 +455,12 @@ export function useDashboardProgress() {
           return topic.status !== 'Completed'
         }
 
-        const studiedTime = new Date(topic.lastStudiedAt).getTime()
-        if (Number.isNaN(studiedTime)) {
-          return false
+        const studiedDate = parseDateValue(topic.lastStudiedAt)
+        if (!studiedDate) {
+          return true
         }
 
-        return currentTimeMs - studiedTime >= thresholdMs
+        return currentTimeMs - studiedDate.getTime() >= thresholdMs
       }).length
   }, [studyPlan, currentTimeMs])
 
@@ -406,14 +479,122 @@ export function useDashboardProgress() {
           return topic.status !== 'Completed'
         }
 
-        const studiedTime = new Date(topic.lastStudiedAt).getTime()
-        if (Number.isNaN(studiedTime)) {
-          return false
+        const studiedDate = parseDateValue(topic.lastStudiedAt)
+        if (!studiedDate) {
+          return true
         }
 
-        return currentTimeMs - studiedTime >= thresholdMs
+        return currentTimeMs - studiedDate.getTime() >= thresholdMs
       })
   }, [studyPlan, currentTimeMs])
+
+  const pathSummaries = useMemo(() => {
+    const groupedByPath = new Map()
+
+    studyPlan.forEach((dayEntry) => {
+      if (!groupedByPath.has(dayEntry.pathId)) {
+        groupedByPath.set(dayEntry.pathId, {
+          pathId: dayEntry.pathId,
+          pathGoal: dayEntry.pathGoal,
+          totalTopics: 0,
+          completedTopics: 0,
+          totalDays: 0,
+        })
+      }
+
+      const summary = groupedByPath.get(dayEntry.pathId)
+      summary.totalDays += 1
+      summary.totalTopics += dayEntry.topics.length
+      summary.completedTopics += dayEntry.topics.filter((topic) => topic.status === 'Completed').length
+    })
+
+    return Array.from(groupedByPath.values()).map((summary) => ({
+      ...summary,
+      isCompleted: summary.totalTopics > 0 && summary.completedTopics === summary.totalTopics,
+    }))
+  }, [studyPlan])
+
+  const removePathDataFromLocalStorage = (pathIds) => {
+    if (!user?.uid || pathIds.length === 0) {
+      return
+    }
+
+    const progressMap = readStoredProgressMap(user.uid)
+    const revisionMap = readStoredRevisionMap(user.uid)
+
+    const nextProgressMap = removePathKeysFromMap(progressMap, pathIds)
+    const nextRevisionMap = removePathKeysFromMap(revisionMap, pathIds)
+
+    writeStoredProgressMap(user.uid, nextProgressMap)
+    writeStoredRevisionMap(user.uid, nextRevisionMap)
+  }
+
+  const handleDeletePath = async (pathId) => {
+    if (!user?.uid || !pathId) {
+      return
+    }
+
+    const targetPath = pathSummaries.find((summary) => summary.pathId === pathId)
+    const confirmationMessage = targetPath
+      ? `Delete "${targetPath.pathGoal}" and all its progress?`
+      : 'Delete this study path and all its progress?'
+
+    if (typeof window !== 'undefined' && !window.confirm(confirmationMessage)) {
+      return
+    }
+
+    setSyncError('')
+    setIsDeletingPath(true)
+
+    try {
+      await removeStudyPaths(user.uid, [pathId])
+      removePathDataFromLocalStorage([pathId])
+      setStudyPlan((previousPlan) => previousPlan.filter((dayEntry) => dayEntry.pathId !== pathId))
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to delete study path.'
+      setSyncError(message)
+    } finally {
+      setIsDeletingPath(false)
+    }
+  }
+
+  const handleDeleteCompletedPaths = async () => {
+    if (!user?.uid) {
+      return
+    }
+
+    const completedPathIds = pathSummaries
+      .filter((summary) => summary.isCompleted)
+      .map((summary) => summary.pathId)
+
+    if (completedPathIds.length === 0) {
+      setSyncError('No completed study paths available to delete.')
+      return
+    }
+
+    const confirmationMessage = `Delete ${completedPathIds.length} completed path(s)? This cannot be undone.`
+    if (typeof window !== 'undefined' && !window.confirm(confirmationMessage)) {
+      return
+    }
+
+    setSyncError('')
+    setIsDeletingPath(true)
+
+    try {
+      await removeStudyPaths(user.uid, completedPathIds)
+      removePathDataFromLocalStorage(completedPathIds)
+      setStudyPlan((previousPlan) =>
+        previousPlan.filter((dayEntry) => !completedPathIds.includes(dayEntry.pathId)),
+      )
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to delete completed study paths.'
+      setSyncError(message)
+    } finally {
+      setIsDeletingPath(false)
+    }
+  }
 
   return {
     studyPlan,
@@ -424,5 +605,9 @@ export function useDashboardProgress() {
     handleStatusChange,
     revisionDueCount,
     overdueTopics,
+    pathSummaries,
+    isDeletingPath,
+    handleDeletePath,
+    handleDeleteCompletedPaths,
   }
 }

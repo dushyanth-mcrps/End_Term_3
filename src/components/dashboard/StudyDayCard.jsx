@@ -7,17 +7,35 @@ function isRevisionDue(lastStudiedAt) {
 
   const studiedDate = new Date(lastStudiedAt)
   if (Number.isNaN(studiedDate.getTime())) {
-    return false
+    return true
   }
 
   const hoursSinceStudy = (Date.now() - studiedDate.getTime()) / (60 * 60 * 1000)
   return hoursSinceStudy >= 48
 }
 
+function formatLastStudied(lastStudiedAt) {
+  if (!lastStudiedAt) {
+    return 'Not studied yet'
+  }
+
+  const studiedDate = new Date(lastStudiedAt)
+  if (Number.isNaN(studiedDate.getTime())) {
+    return 'Unknown date'
+  }
+
+  return studiedDate.toLocaleString()
+}
+
 function StudyDayCard({ dayPlan, onStatusChange }) {
   return (
     <article className="rounded-lg border border-slate-200 bg-slate-50 p-4">
       <h2 className="text-lg font-semibold text-slate-900">Day {dayPlan.day}</h2>
+      {dayPlan.pathGoal ? (
+        <p className="mt-1 text-xs font-medium uppercase tracking-wide text-blue-700">
+          Path: {dayPlan.pathGoal}
+        </p>
+      ) : null}
       <ul className="mt-3 space-y-3">
         {dayPlan.topics.map((topic) => (
           <li
@@ -39,9 +57,7 @@ function StudyDayCard({ dayPlan, onStatusChange }) {
               </div>
               <p className="mt-1 text-xs text-slate-500">
                 Last studied:{' '}
-                {topic.lastStudiedAt
-                  ? new Date(topic.lastStudiedAt).toLocaleString()
-                  : 'Not studied yet'}
+                {formatLastStudied(topic.lastStudiedAt)}
               </p>
             </div>
             <div className="mt-2 sm:mt-0">

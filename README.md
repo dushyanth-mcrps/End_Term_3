@@ -18,20 +18,25 @@ This project solves that by combining AI planning, progress tracking, secure use
 
 1. Adaptive Study Path Generator
 - User enters a goal and timeframe.
-- Gemini generates a day-wise study plan.
+- Groq generates a day-wise study plan.
 - Plan is saved per authenticated user.
 
 2. Focus Dashboard
-- Displays all study days and topics.
+- Displays all study paths, days, and topics.
 - Topic status tracking: Not Started, In Progress, Completed.
-- Status updates are persisted to Firestore.
+- Status updates are persisted to Firestore + localStorage fallback.
 
-3. Smart Vault (CRUD)
+3. Multi-Path Management
+- Supports multiple concurrent study paths for one user.
+- Delete an individual path.
+- Bulk delete fully completed paths.
+
+4. Smart Vault (CRUD)
 - Add, edit, and delete personal resources.
 - AI resource suggestions by topic (YouTube + docs).
 - User data is scoped by authenticated user ID.
 
-4. Authentication + Protected Routes
+5. Authentication + Protected Routes
 - Signup, login, logout with Firebase Auth.
 - Protected routes for Dashboard and Vault.
 - Unauthorized access redirects to Login.
@@ -52,6 +57,10 @@ This project solves that by combining AI planning, progress tracking, secure use
 - Highlights topics not studied in 48 hours.
 - Uses user-scoped localStorage timestamp persistence.
 
+4. Live Study-Time Refresh
+- In-progress topic minutes update automatically every 30 seconds.
+- Completed topics retain persisted time spent.
+
 ## Tech Stack
 
 - React 19
@@ -60,7 +69,7 @@ This project solves that by combining AI planning, progress tracking, secure use
 - Tailwind CSS
 - Firebase Auth
 - Firestore
-- Gemini API
+- Groq API
 
 ## Routes
 
@@ -91,7 +100,7 @@ cp .env.example .env
 
 Required variables:
 
-- VITE_GEMINI_API_KEY
+- VITE_GROQ_API_KEY
 - VITE_FIREBASE_API_KEY
 - VITE_FIREBASE_AUTH_DOMAIN
 - VITE_FIREBASE_PROJECT_ID
@@ -165,20 +174,25 @@ All user data is stored under users/{uid}/...:
 
 No shared fallback user identity is used.
 
+## Study Plan Data Model
+
+The study document supports multiple paths:
+
+- `paths[]` : array of study paths (goal, timeframe, plan, progress, timestamps)
+- `activePathId` : currently active path id
+- `plan` and `progress` : active path snapshot for backward compatibility
+
 ## Demo Flow (3 to 5 Minutes)
 
 1. Sign up or log in.
-2. Generate a study plan from Home.
+2. Generate two different study paths from Home.
 3. Open Dashboard and update topic status.
 4. Show analytics and revision reminders.
-5. Use Smart Vault CRUD.
-6. Trigger AI resource suggestions.
-7. Open lazy-loaded AI Summarizer.
-8. Switch user account to demonstrate user-specific data.
-
-## Deployment
-
-Use the complete checklist in DEPLOYMENT_CHECKLIST.md.
+5. Show Manage Study Paths (delete one path / delete completed paths).
+6. Use Smart Vault CRUD.
+7. Trigger AI resource suggestions.
+8. Open lazy-loaded AI Summarizer.
+9. Switch user account to demonstrate user-specific data.
 
 ## Viva Readiness Pointers
 
@@ -186,6 +200,7 @@ Be ready to explain:
 
 1. Auth flow and protected routing.
 2. Firestore schema and security rules.
-3. Hook design for progress, analytics, and reminders.
-4. AI prompt/response normalization.
-5. Why lazy loading and useMemo are used.
+3. Multi-path study storage and path-scoped progress updates.
+4. Hook design for progress, analytics, reminders, and path deletion.
+5. AI prompt/response normalization with Groq.
+6. Why lazy loading and useMemo are used.

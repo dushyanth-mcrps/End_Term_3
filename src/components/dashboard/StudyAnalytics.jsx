@@ -1,4 +1,34 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+
+function parseDateValue(value) {
+  if (!value) {
+    return null
+  }
+
+  const parsedDate = new Date(value)
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+}
+
+function getLiveMinutes(topic, currentTimeMs) {
+  const savedMinutes = Number(topic.timeSpentMinutes ?? 0)
+
+  if (topic.status !== 'In Progress') {
+    return savedMinutes
+  }
+
+  const startedAt = parseDateValue(topic.startedAt)
+  if (!startedAt) {
+    return savedMinutes
+  }
+
+  const elapsedMs = Math.max(0, currentTimeMs - startedAt.getTime())
+  if (elapsedMs === 0) {
+    return savedMinutes
+  }
+
+  const liveMinutes = Math.max(1, Math.ceil(elapsedMs / 60000))
+  return savedMinutes + liveMinutes
+}
 
 function formatMinutes(minutes) {
   if (minutes <= 0) {
@@ -16,6 +46,18 @@ function formatMinutes(minutes) {
 }
 
 function StudyAnalytics({ studyPlan }) {
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTimeMs(Date.now())
+    }, 30 * 1000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [])
+
   const analytics = useMemo(() => {
     const topics = studyPlan.flatMap((dayEntry) =>
       dayEntry.topics.map((topic) => ({
@@ -37,7 +79,7 @@ function StudyAnalytics({ studyPlan }) {
         id: topic.id,
         title: topic.title,
         day: topic.day,
-        minutes: Number(topic.timeSpentMinutes ?? 0),
+        minutes: getLiveMinutes(topic, currentTimeMs),
         status: topic.status,
       }))
       .sort((firstTopic, secondTopic) => secondTopic.minutes - firstTopic.minutes)
@@ -65,7 +107,7 @@ function StudyAnalytics({ studyPlan }) {
       timeSpentPerTopic,
       completionTrends,
     }
-  }, [studyPlan])
+  }, [studyPlan, currentTimeMs])
 
   return (
     <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -126,12 +168,6 @@ function StudyAnalytics({ studyPlan }) {
                   <span className="rounded-full bg-slate-900 px-2.5 py-1 text-xs font-medium text-white">
                     {formatMinutes(topic.minutes)}
                   </span>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className="h-full rounded-full bg-blue-700"
-                    style={{ width: `${Math.min(topic.minutes * 10, 100)}%` }}
-                  />
                 </div>
               </li>
             ))}

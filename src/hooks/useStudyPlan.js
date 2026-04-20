@@ -69,7 +69,7 @@ export function useStudyPlan() {
 
       const generatedPlan = await generateStudyPlan(goal, timeframe)
 
-      await saveStudyPlan(user.uid, generatedPlan)
+      await saveStudyPlan(user.uid, generatedPlan, { goal, timeframe })
       setStudyPlan(generatedPlan)
 
       return generatedPlan
