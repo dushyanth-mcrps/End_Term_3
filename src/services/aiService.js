@@ -17,7 +17,7 @@ function buildResourcePrompt(topic) {
 Return only valid JSON in this exact format:
 {
   "youtube": [
-    { "title": "Video title", "link": "https://www.youtube.com/watch?v=..." }
+    { "title": "Video title", "link": "https://www.youtube.com/results?search_query=..." }
   ],
   "docs": [
     { "title": "Doc title", "link": "https://..." }
@@ -25,7 +25,8 @@ Return only valid JSON in this exact format:
 }
 Rules:
 - Include exactly 3 YouTube links and 3 docs links.
-- Use real, direct URLs.
+- For YouTube, always use search-result links (youtube.com/results?search_query=...).
+- For docs, prefer search-result links (google.com/search?q=...+documentation) to avoid dead pages.
 - Keep titles concise.`
 }
 
@@ -148,7 +149,26 @@ async function requestGroq(textPrompt) {
   throw new Error(lastErrorMessage)
 }
 
-function normalizeResourceItems(items) {
+function isValidHttpUrl(value) {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function buildYoutubeSearchLink(query) {
+  const encodedQuery = encodeURIComponent(String(query ?? '').trim())
+  return `https://www.youtube.com/results?search_query=${encodedQuery}`
+}
+
+function buildDocsSearchLink(query) {
+  const encodedQuery = encodeURIComponent(`${String(query ?? '').trim()} documentation`)
+  return `https://www.google.com/search?q=${encodedQuery}`
+}
+
+function normalizeYouTubeItems(items) {
   if (!Array.isArray(items)) {
     return []
   }
@@ -158,17 +178,69 @@ function normalizeResourceItems(items) {
       title: String(item?.title ?? '').trim(),
       link: String(item?.link ?? '').trim(),
     }))
-    .filter((item) => item.title && item.link)
+    .map((item) => {
+      if (!item.title) {
+        return item
+      }
+
+      const isYouTubeLink = /(^|\.)youtube\.com|(^|\.)youtu\.be/i.test(item.link)
+
+      if (!item.link || !isYouTubeLink) {
+        return {
+          ...item,
+          link: buildYoutubeSearchLink(item.title),
+        }
+      }
+
+      return item
+    })
+    .filter((item) => item.title && item.link && isValidHttpUrl(item.link))
 }
 
-function normalizeSuggestions(rawSuggestions) {
+function normalizeDocsItems(items, topic) {
+  if (!Array.isArray(items)) {
+    return []
+  }
+
+  const normalizedTopic = String(topic ?? '').trim()
+
+  return items
+    .map((item) => ({
+      title: String(item?.title ?? '').trim(),
+      link: String(item?.link ?? '').trim(),
+    }))
+    .map((item) => {
+      if (!item.title) {
+        return item
+      }
+
+      const isYouTubeLink = /(^|\.)youtube\.com|(^|\.)youtu\.be/i.test(item.link)
+      const hasValidDocLink = item.link && isValidHttpUrl(item.link) && !isYouTubeLink
+
+      if (hasValidDocLink) {
+        return item
+      }
+
+      const fallbackQuery = normalizedTopic
+        ? `${item.title} ${normalizedTopic}`
+        : item.title
+
+      return {
+        ...item,
+        link: buildDocsSearchLink(fallbackQuery),
+      }
+    })
+    .filter((item) => item.title && item.link && isValidHttpUrl(item.link))
+}
+
+function normalizeSuggestions(rawSuggestions, topic) {
   if (!rawSuggestions || typeof rawSuggestions !== 'object') {
     throw new Error('Invalid resource suggestion format received from AI.')
   }
 
   return {
-    youtube: normalizeResourceItems(rawSuggestions.youtube),
-    docs: normalizeResourceItems(rawSuggestions.docs),
+    youtube: normalizeYouTubeItems(rawSuggestions.youtube),
+    docs: normalizeDocsItems(rawSuggestions.docs, topic),
   }
 }
 
@@ -211,7 +283,7 @@ export async function suggestResources(topic) {
   const textOutput = await requestGroq(buildResourcePrompt(normalizedTopic))
   const parsedSuggestions = extractJsonObject(textOutput)
 
-  return normalizeSuggestions(parsedSuggestions)
+  return normalizeSuggestions(parsedSuggestions, normalizedTopic)
 }
 
 export async function summarizeText(inputText) {
